@@ -16,3 +16,21 @@ export interface Proposal {
   keywords: string;
   updatedAt?: string;
 }
+
+export interface PedagogicalWish {
+  id: string;
+  createdAt: string;
+  teacher_name: string;
+  teacher_rank: string;
+  teacher_email: string;
+  department: string;
+  department_label: string;
+  module_name: string;
+  year_level: string;
+  lesson_types: string[];
+  group_count?: string | number;
+  notes?: string;
+  status: 'pending' | 'accepted' | 'rejected';
+  updatedAt?: string;
+}
+
