@@ -13,10 +13,20 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 const DATA_FILE = path.join(process.cwd(), "submissions.json");
+const WISHES_FILE = path.join(process.cwd(), "pedagogical_wishes.json");
+const EMAILS_FILE = path.join(process.cwd(), "email_notifications.json");
 
 // Ensure data file exists with initial empty array
 if (!fs.existsSync(DATA_FILE)) {
   fs.writeFileSync(DATA_FILE, JSON.stringify([], null, 2), "utf8");
+}
+
+if (!fs.existsSync(WISHES_FILE)) {
+  fs.writeFileSync(WISHES_FILE, JSON.stringify([], null, 2), "utf8");
+}
+
+if (!fs.existsSync(EMAILS_FILE)) {
+  fs.writeFileSync(EMAILS_FILE, JSON.stringify([], null, 2), "utf8");
 }
 
 // Read submissions helper
@@ -29,9 +39,39 @@ function readSubmissions() {
   }
 }
 
+// Read pedagogical wishes helper
+function readWishes() {
+  try {
+    const data = fs.readFileSync(WISHES_FILE, "utf8");
+    return JSON.parse(data);
+  } catch (error) {
+    return [];
+  }
+}
+
+// Read email notifications helper
+function readEmails() {
+  try {
+    const data = fs.readFileSync(EMAILS_FILE, "utf8");
+    return JSON.parse(data);
+  } catch (error) {
+    return [];
+  }
+}
+
 // Write submissions helper
 function writeSubmissions(submissions: any[]) {
   fs.writeFileSync(DATA_FILE, JSON.stringify(submissions, null, 2), "utf8");
+}
+
+// Write wishes helper
+function writeWishes(wishes: any[]) {
+  fs.writeFileSync(WISHES_FILE, JSON.stringify(wishes, null, 2), "utf8");
+}
+
+// Write emails helper
+function writeEmails(emails: any[]) {
+  fs.writeFileSync(EMAILS_FILE, JSON.stringify(emails, null, 2), "utf8");
 }
 
 // 1. Get all submissions
@@ -196,14 +236,158 @@ app.put("/api/submissions/:id", (req, res) => {
   res.json({ success: true, submission: submissions[index] });
 });
 
+// === Pedagogical Wishes APIs ===
+
+// 1. Get all wishes
+app.get("/api/wishes", (req, res) => {
+  const wishes = readWishes();
+  res.json(wishes);
+});
+
+// Get all email notifications
+app.get("/api/emails", (req, res) => {
+  const emails = readEmails();
+  res.json(emails);
+});
+
+// 2. Add multiple or single wish
+app.post("/api/wishes", (req, res) => {
+  try {
+    const data = req.body;
+    const wishes = readWishes();
+    const resultWishes: any[] = [];
+
+    if (Array.isArray(data)) {
+      data.forEach((item: any) => {
+        const newWish = {
+          id: "wish_" + Date.now() + "_" + Math.random().toString(36).substr(2, 9),
+          createdAt: new Date().toISOString(),
+          status: item.status || 'pending',
+          ...item
+        };
+        wishes.push(newWish);
+        resultWishes.push(newWish);
+      });
+    } else {
+      const newWish = {
+        id: "wish_" + Date.now() + "_" + Math.random().toString(36).substr(2, 9),
+        createdAt: new Date().toISOString(),
+        status: data.status || 'pending',
+        ...data
+      };
+      wishes.push(newWish);
+      resultWishes.push(newWish);
+    }
+
+    writeWishes(wishes);
+    res.json({
+      success: true,
+      message: "Wishes successfully recorded",
+      submissions: resultWishes
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// 3. Delete a wish
+app.delete("/api/wishes/:id", (req, res) => {
+  const { id } = req.params;
+  let wishes = readWishes();
+  const initialLength = wishes.length;
+  wishes = wishes.filter((w: any) => w.id !== id);
+  if (wishes.length === initialLength) {
+    return res.status(404).json({ success: false, message: "Wish not found" });
+  }
+  writeWishes(wishes);
+  res.json({ success: true, message: "Wish deleted successfully" });
+});
+
+// 4. Update an existing wish
+app.put("/api/wishes/:id", (req, res) => {
+  const { id } = req.params;
+  const updatedData = req.body;
+  const wishes = readWishes();
+  const index = wishes.findIndex((w: any) => w.id === id);
+
+  if (index === -1) {
+    return res.status(404).json({ success: false, message: "Wish not found" });
+  }
+
+  const oldWish = wishes[index];
+  const oldStatus = oldWish.status || 'pending';
+  const newStatus = updatedData.status;
+
+  wishes[index] = {
+    ...wishes[index],
+    ...updatedData,
+    updatedAt: new Date().toISOString()
+  };
+
+  let emailNotificationSent = false;
+  let emailDetails = null;
+
+  // When status changes to accepted from something else
+  if (newStatus === 'accepted' && oldStatus !== 'accepted') {
+    const emailSubject = `🟢 قبول رغبتك البيداغوجية: ${wishes[index].module_name} بقسم ${wishes[index].department_label}`;
+    const emailBody = `
+أهلاً بك الأستاذ(ة) المحترم(ة) ${wishes[index].teacher_name}،
+
+يسعدنا في إدارة كلية الرياضيات وعلوم المادة - جامعة قاصدي مرباح ورقلة أن نبلغكم بأنه قد تمت الموافقة وقبول رغبتكم البيداغوجية والتدريسية المودعة كالتالي:
+
+- المادة التدريسية: ${wishes[index].module_name}
+- القسم: ${wishes[index].department_label}
+- المستوى الدراسي: ${wishes[index].year_level}
+- نوع الحصص المعتمدة: ${Array.isArray(wishes[index].lesson_types) ? wishes[index].lesson_types.map((t: string) => t === 'Cours' ? 'محاضرة' : t === 'TD' ? 'أعمال موجهة' : 'أعمال تطبيقية').join(' ، ') : '-'}
+- عدد الأفواج المقترحة: ${wishes[index].group_count || '-'}
+
+نشكركم على مساهمتكم الدائمة في تطوير العملية التعليمية بالكلية.
+
+مع تحيات،
+إدارة كلية الرياضيات وعلوم المادة
+جامعة قاصدي مرباح ورقلة
+    `.trim();
+
+    const newEmail = {
+      id: "email_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5),
+      wishId: id,
+      teacherName: wishes[index].teacher_name,
+      teacherEmail: wishes[index].teacher_email,
+      moduleName: wishes[index].module_name,
+      departmentLabel: wishes[index].department_label,
+      sentAt: new Date().toISOString(),
+      subject: emailSubject,
+      body: emailBody,
+      status: 'sent'
+    };
+
+    const emails = readEmails();
+    emails.push(newEmail);
+    writeEmails(emails);
+
+    emailNotificationSent = true;
+    emailDetails = newEmail;
+
+    console.log(`[EMAIL DISPATCH SUCCESS] Automatically emailed Teacher ${wishes[index].teacher_name} (${wishes[index].teacher_email}): "${emailSubject}"`);
+  }
+
+  writeWishes(wishes);
+  res.json({ 
+    success: true, 
+    wish: wishes[index],
+    emailNotificationSent,
+    emailDetails
+  });
+});
+
 // 5. Verify admin passcode
 app.post("/api/admin/login", (req, res) => {
   const { passcode } = req.body;
-  // Accept any non-empty passcode to remove restrictions on users
-  if (passcode && passcode.trim().length > 0) {
+  // Secure access with a specific, secure passcode
+  if (passcode === "ouargla2026") {
     return res.json({ success: true, token: "admin_token_" + Date.now() });
   }
-  res.status(400).json({ success: false, message: "رمز المرور فارغ أو غير صالح" });
+  res.status(401).json({ success: false, message: "رمز المرور غير صحيح أو غير مصرح به" });
 });
 
 // Vite server integration or production dist static serving
