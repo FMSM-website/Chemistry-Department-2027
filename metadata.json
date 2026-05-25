@@ -1,0 +1,6 @@
+{
+  "name": "استمارة مقترحات مذكرات التخرج",
+  "description": "نظام إرسال وإدارة مقترحات مواضيع مذكرات التخرج لطلبة الماستر بكلية الرياضيات وعلوم المادة - جامعة قاصدي مرباح ورقلة، مع حفظ البيانات محلياً وبثها إلى Google Sheets",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

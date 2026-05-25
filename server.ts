@@ -1,0 +1,230 @@
+import express from "express";
+import path from "path";
+import fs from "fs";
+import { createServer as createViteServer } from "vite";
+import dotenv from "dotenv";
+
+dotenv.config();
+
+const app = express();
+const PORT = 3000;
+
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+const DATA_FILE = path.join(process.cwd(), "submissions.json");
+
+// Ensure data file exists with initial empty array
+if (!fs.existsSync(DATA_FILE)) {
+  fs.writeFileSync(DATA_FILE, JSON.stringify([], null, 2), "utf8");
+}
+
+// Read submissions helper
+function readSubmissions() {
+  try {
+    const data = fs.readFileSync(DATA_FILE, "utf8");
+    return JSON.parse(data);
+  } catch (error) {
+    return [];
+  }
+}
+
+// Write submissions helper
+function writeSubmissions(submissions: any[]) {
+  fs.writeFileSync(DATA_FILE, JSON.stringify(submissions, null, 2), "utf8");
+}
+
+// 1. Get all submissions
+app.get("/api/submissions", (req, res) => {
+  const submissions = readSubmissions();
+  res.json(submissions);
+});
+
+// 2. Add or update submissions
+app.post("/api/submissions", async (req, res) => {
+  try {
+    const data = req.body;
+    
+    // Create new submission object
+    const newSubmission = {
+      id: "sub_" + Date.now() + "_" + Math.random().toString(36).substr(2, 9),
+      createdAt: new Date().toISOString(),
+      ...data
+    };
+
+    // Save locally to ensure no data loss
+    const submissions = readSubmissions();
+    submissions.push(newSubmission);
+    writeSubmissions(submissions);
+
+    // Forward/Proxy proposal to Owner's Google Apps Script for live sheet sync
+    const googleScriptUrl = "https://script.google.com/macros/s/AKfycby5M744MfIz53wcu5sd6T3nRkILypHqAbZhf_cyuC_D-McSJ10jrVo7M5RCqYC_CDc50A/exec";
+    
+    // We send BOTH Arabic and English keys to guarantee that the Google Apps Script
+    // will successfully read the fields whether it references the old Arabic keys or the new English keys!
+    const formData = new URLSearchParams();
+    
+    // English Keys
+    formData.append("supervisor_fullname", data.supervisor_fullname || "");
+    formData.append("supervisor_rank", data.supervisor_rank || "");
+    formData.append("supervisor_email", data.supervisor_email || "");
+    formData.append("cosupervisor_name", data.cosupervisor_name || "");
+    formData.append("cosupervisor_rank", data.cosupervisor_rank || "");
+    formData.append("cosupervisor_email", data.cosupervisor_email || "");
+    formData.append("cosupervisor_phone", data.cosupervisor_phone || "");
+    formData.append("specialty", data.specialty || "");
+    formData.append("title_arabic", data.title_arabic || "");
+    formData.append("title_english", data.title_english || "");
+    formData.append("work_type", data.work_type || "");
+    formData.append("summary", data.summary || "");
+    formData.append("keywords", data.keywords || "");
+
+    // Arabic Keys (Exact matching with the exported CSV / Excel headers)
+    formData.append("الاسم الكامل للمشرف", data.supervisor_fullname || "");
+    formData.append("الرتبة العلمية للمشرف", data.supervisor_rank || "");
+    formData.append("البريد الإلكتروني", data.supervisor_email || "");
+    formData.append("اسم المساعد", data.cosupervisor_name || "");
+    formData.append("رتبة المساعد", data.cosupervisor_rank || "");
+    formData.append("البريد الإلكتروني للمساعد", data.cosupervisor_email || "");
+    formData.append("هاتف المساعد", data.cosupervisor_phone || "");
+    formData.append("التخصص المستهدف", data.specialty || "");
+    formData.append("عنوان المشروع بالعربية", data.title_arabic || "");
+    formData.append("عنوان المشروع بالإنجليزية", data.title_english || "");
+    formData.append("طبيعة العمل", data.work_type || "");
+    formData.append("الملخص التقني", data.summary || "");
+    formData.append("الكلمات المفتاحية", data.keywords || "");
+
+    // Arabic Keys (Aliases with spaces - for absolute backward and fallback compatibility)
+    formData.append("الاسم الكامل", data.supervisor_fullname || "");
+    formData.append("رتبة المشرف", data.supervisor_rank || "");
+    formData.append("بريد التواصل", data.supervisor_email || "");
+    formData.append("المشرف المساعد", data.cosupervisor_name || "");
+    formData.append("البريد الإلكتروني للأستاذ المساعد", data.cosupervisor_email || "");
+    formData.append("بريد المساعد", data.cosupervisor_email || "");
+    formData.append("رقم هاتف الأستاذ المساعد", data.cosupervisor_phone || "");
+    formData.append("العنوان بالعربية", data.title_arabic || "");
+    formData.append("العنوان باللغة العربية", data.title_arabic || "");
+    formData.append("العنوان بالإنجليزية", data.title_english || "");
+    formData.append("العنوان باللغة الإنجليزية", data.title_english || "");
+    formData.append("نوع العمل", data.work_type || "");
+    formData.append("الملخص", data.summary || "");
+
+    // Arabic Keys (Aliases with underscores - for systems requiring legacy formatting)
+    formData.append("الاسم_الكامل", data.supervisor_fullname || "");
+    formData.append("رتبة_المشرف", data.supervisor_rank || "");
+    formData.append("بريد_التواصل", data.supervisor_email || "");
+    formData.append("المشرف_المساعد", data.cosupervisor_name || "");
+    formData.append("رتبة_المساعد", data.cosupervisor_rank || "");
+    formData.append("بريد_المساعد", data.cosupervisor_email || "");
+    formData.append("هاتف_المساعد", data.cosupervisor_phone || "");
+    formData.append("التخصص", data.specialty || "");
+    formData.append("التخصص_المستهدف", data.specialty || "");
+    formData.append("العنوان_بالعربية", data.title_arabic || "");
+    formData.append("العنوان_بالإنجليزية", data.title_english || "");
+    formData.append("طبيعة_العمل", data.work_type || "");
+    formData.append("نوع_العمل", data.work_type || "");
+    formData.append("الملخص_الكامل", data.summary || "");
+    formData.append("الكلمات_المفتاحية", data.keywords || "");
+
+    // Also send timestamp and ID
+    formData.append("submission_id", newSubmission.id);
+    formData.append("timestamp", newSubmission.createdAt);
+
+    let scriptSuccess = false;
+    try {
+      // Fire-and-forget or await Google Apps Script post with 8 second timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+      
+      const response = await fetch(googleScriptUrl, {
+        method: "POST",
+        body: formData,
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+      scriptSuccess = response.ok;
+    } catch (err) {
+      console.error("Google Sheets forward error:", err);
+    }
+
+    res.json({
+      success: true,
+      message: "Proposed successfully saved locally and synced to Sheets",
+      syncedToSheets: scriptSuccess,
+      submission: newSubmission
+    });
+
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// 3. Delete a submission (Admin feature)
+app.delete("/api/submissions/:id", (req, res) => {
+  const { id } = req.params;
+  let submissions = readSubmissions();
+  const initialLength = submissions.length;
+  submissions = submissions.filter((s: any) => s.id !== id);
+  if (submissions.length === initialLength) {
+    return res.status(404).json({ success: false, message: "Submission not found" });
+  }
+  writeSubmissions(submissions);
+  res.json({ success: true, message: "Submission deleted successfully" });
+});
+
+// 4. Update an existing submission (Admin edit typos)
+app.put("/api/submissions/:id", (req, res) => {
+  const { id } = req.params;
+  const updatedData = req.body;
+  const submissions = readSubmissions();
+  const index = submissions.findIndex((s: any) => s.id === id);
+  
+  if (index === -1) {
+    return res.status(404).json({ success: false, message: "Submission not found" });
+  }
+
+  submissions[index] = {
+    ...submissions[index],
+    ...updatedData,
+    updatedAt: new Date().toISOString()
+  };
+  
+  writeSubmissions(submissions);
+  res.json({ success: true, submission: submissions[index] });
+});
+
+// 5. Verify admin passcode
+app.post("/api/admin/login", (req, res) => {
+  const { passcode } = req.body;
+  // Accept any non-empty passcode to remove restrictions on users
+  if (passcode && passcode.trim().length > 0) {
+    return res.json({ success: true, token: "admin_token_" + Date.now() });
+  }
+  res.status(400).json({ success: false, message: "رمز المرور فارغ أو غير صالح" });
+});
+
+// Vite server integration or production dist static serving
+async function init() {
+  if (process.env.NODE_ENV !== "production") {
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: "spa",
+    });
+    app.use(vite.middlewares);
+  } else {
+    const distPath = path.join(process.cwd(), "dist");
+    app.use(express.static(distPath));
+    app.get("*", (req, res) => {
+      res.sendFile(path.join(distPath, "index.html"));
+    });
+  }
+
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server is running on port ${PORT}`);
+  });
+}
+
+init();
